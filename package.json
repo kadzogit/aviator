@@ -1,0 +1,19 @@
+{
+  "name": "aviator-full-project",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Aviator crash game - React + Firebase + Vercel + IntaSend",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:admin": "cd admin && npm run dev",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "build:admin": "cd admin && npm install && npm run build",
+    "install:all": "npm install && cd frontend && npm install && cd ../admin && npm install"
+  },
+  "dependencies": {
+    "all": "^0.0.0",
+    "axios": "^1.7.2",
+    "firebase-admin": "^12.2.0",
+    "intasend-node": "^1.0.5"
+  }
+}

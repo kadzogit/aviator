@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────
+    function isAuth()       { return request.auth != null; }
+    function uid()          { return request.auth.uid; }
+    function userDoc()      { return get(/databases/$(database)/documents/users/$(uid())); }
+    function isAdmin()      { return isAuth() && userDoc().data.role in ["admin","superadmin"]; }
+    function isSuperAdmin() { return isAuth() && userDoc().data.role == "superadmin"; }
+    function isBanned()     { return isAuth() && userDoc().data.get("banned", false) == true; }
+
+    // ── Users ─────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:   if isAuth() && (uid() == userId || isAdmin());
+      allow create: if isAuth() && uid() == userId;
+      allow update: if isAuth() && (uid() == userId || isAdmin());
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Game State ────────────────────────────────────────────
+    match /gameState/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && !isBanned();
+    }
+
+    // ── Rounds ────────────────────────────────────────────────
+    match /rounds/{roundId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && !isBanned();
+    }
+
+    // ── Bets ──────────────────────────────────────────────────
+    match /bets/{betId} {
+      allow read:  if isAuth();
+      allow create:if isAuth() && !isBanned();
+      allow update:if isAuth() && (resource.data.uid == uid() || isAdmin());
+      allow delete:if isAdmin();
+    }
+
+    // ── Transactions ──────────────────────────────────────────
+    match /transactions/{txnId} {
+      allow read:  if isAuth() && (resource.data.uid == uid() || isAdmin());
+      allow create:if isAuth() && !isBanned();
+      allow update:if isAdmin();
+      allow delete:if isSuperAdmin();
+    }
+
+    // ── Admin Logs ────────────────────────────────────────────
+    match /adminLogs/{logId} {
+      allow read:  if isAdmin();
+      allow create:if isAdmin();
+      allow update:if false;
+      allow delete:if isSuperAdmin();
+    }
+
+    // ── Game Settings ─────────────────────────────────────────
+    match /gameSettings/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Announcements ─────────────────────────────────────────
+    match /announcements/{annId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Chat ──────────────────────────────────────────────────
+    match /chat/{msgId} {
+      allow read:  if isAuth();
+      allow create:if isAuth() && !isBanned() &&
+        (get(/databases/$(database)/documents/users/$(uid())).data.chatEnabled == true ||
+         get(/databases/$(database)/documents/users/$(uid())).data.role in ["admin","superadmin"]);
+      allow update:if false;
+      allow delete:if isAdmin();
+    }
+  }
+}

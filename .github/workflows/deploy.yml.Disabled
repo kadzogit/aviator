@@ -1,0 +1,59 @@
+name: Deploy Aviator
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── Deploy frontend + API to Vercel ──────────────────────────
+  deploy-vercel:
+    name: Deploy Game (Frontend + API) → Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Install root deps
+        run: npm install
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: "--prod"
+          working-directory: ./
+
+  # ── Deploy admin dashboard to separate Vercel project ────────
+  deploy-admin:
+    name: Deploy Admin Dashboard → Vercel (Admin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Build admin
+        run: cd admin && npm install && npm run build
+      - name: Deploy admin to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
+          vercel-args: "--prod"
+          working-directory: ./admin
+
+  # ── Deploy Firestore rules ────────────────────────────────────
+  deploy-firestore:
+    name: Deploy Firestore Rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Firestore rules & indexes
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only firestore --project aviator-6827d
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
