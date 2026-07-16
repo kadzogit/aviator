@@ -7,13 +7,29 @@ import { getGraphBounds } from "./graphBounds";
 
 export function getFlightProgress(multiplier) {
 
-    const MAX = 70;
+    // The multiplier grows exponentially with time
+    // (see calculateMultiplier in hooks/game/helpers.js:
+    // Math.exp(elapsed * 0.00004)), so mapping it LINEARLY
+    // to screen position was the bug: elapsed time is linear
+    // in log(multiplier), not in multiplier itself. A round
+    // that crashes at 5x-10x (70% of all rounds, per
+    // generateMultiplier) barely moved the curve/plane
+    // because they were being measured against a straight
+    // line all the way out to 70x.
+    //
+    // Using log(multiplier) here makes on-screen progress
+    // track elapsed time proportionally - which is also
+    // just visually correct, since a 3x-10x round (the vast
+    // majority) should use most of the graph, and only the
+    // rare 50x-500x jackpot rounds should blow past the
+    // right edge (clamped at 1, same as before).
+    const MAX = 25;
 
     return Math.max(
         0,
         Math.min(
             1,
-            (multiplier - 1) / (MAX - 1)
+            Math.log(multiplier) / Math.log(MAX)
         )
     );
 
@@ -40,7 +56,7 @@ export function getFlightPoint(progress, width, height) {
     // Gentle early control point so the curve leaves the corner
     // smoothly instead of snapping into a steep climb.
     const p1 = {
-        x: LEFT + usableWidth * 0.82,
+        x: LEFT + usableWidth * 0.42,
         y: BOTTOM
     };
 
