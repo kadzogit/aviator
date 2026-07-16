@@ -40,7 +40,7 @@ export function getFlightPoint(progress, width, height) {
     // Gentle early control point so the curve leaves the corner
     // smoothly instead of snapping into a steep climb.
     const p1 = {
-        x: LEFT + usableWidth * 0.42,
+        x: LEFT + usableWidth * 0.82,
         y: BOTTOM
     };
 
