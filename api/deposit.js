@@ -1,14 +1,20 @@
-import { db, FieldValue } from "../lib/firebase.js";
+import { FieldValue, getDb } from "../lib/firebase.js";
 import nestlink from "../lib/nestlink.js";
 import IntaSend from "intasend-node";
 
 const MIN = { KES: 10, TZS: 10000, UGX: 3000 };
 
-const intasend = new IntaSend(
-  process.env.INTASEND_PUBLISHABLE_KEY,
-  process.env.INTASEND_SECRET_KEY,
-  process.env.INTASEND_TEST_MODE === "true"
-);
+function getIntaSendClient() {
+  if (!process.env.INTASEND_PUBLISHABLE_KEY || !process.env.INTASEND_SECRET_KEY) {
+    throw new Error("Card payments are temporarily unavailable.");
+  }
+
+  return new IntaSend(
+    process.env.INTASEND_PUBLISHABLE_KEY,
+    process.env.INTASEND_SECRET_KEY,
+    process.env.INTASEND_TEST_MODE === "true"
+  );
+}
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -40,9 +46,13 @@ export default async function handler(req, res) {
 
   if (method === "MPESA" && !phoneNumber)
     return res.status(400).json({ error: "Phone number required for M-PESA" });
+  if (method === "MPESA" && !process.env.NESTLINK_API_KEY)
+    return res.status(503).json({ error: "M-PESA payments are temporarily unavailable." });
 
   let txnRef;
   try {
+    const db = getDb();
+
     // ── Fetch user ───────────────────────────────────────────
     const userDoc = await db.collection("users").doc(uid).get();
     if (!userDoc.exists) return res.status(404).json({ error: "User not found" });
@@ -88,6 +98,7 @@ export default async function handler(req, res) {
 
     // ── Card / Checkout Link ─────────────────────────────────
     if (method === "CARD") {
+      const intasend = getIntaSendClient();
       const collection = intasend.collection();
       const response   = await collection.charge({
         first_name:   user.fullName?.split(" ")[0] || "Player",
