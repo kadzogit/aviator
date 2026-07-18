@@ -51,7 +51,11 @@ export default async function handler(req, res) {
 
   let txnRef;
   try {
-    const db = getDb();
+    console.log("STEP 1");
+
+const db = getDb();
+
+console.log("STEP 2");
 
     // ── Fetch user ───────────────────────────────────────────
     const userDoc = await db.collection("users").doc(uid).get();
