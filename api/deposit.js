@@ -31,7 +31,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid amount" });
 
   const min     = MIN[currency];
-  if (!min) return res.status(400).json({ error: `Unsupported currency: ${currency}` });
+  if (!min) return res.status(400).json({
+  error: `Unsupported currency: ${currency}`
+});
  const rounded = Number(amount);
   if (rounded < min)
     return res.status(400).json({ error: `Minimum deposit is ${min.toLocaleString()} ${currency}` });
@@ -113,7 +115,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid method. Use MPESA or CARD." });
 
   } catch (e) {
-    console.error("Deposit error:", e?.response?.data || e.message);
+    console.error("========== DEPOSIT ERROR ==========");
+console.error("message:", e.message);
+console.error("status:", e.response?.status);
+console.error("headers:", e.response?.headers);
+console.error("data:", e.response?.data);
+console.error("stack:", e.stack);
+console.error("==================================");
     if (txnRef) {
       await txnRef.update({ status: "failed", error: e.message }).catch(() => {});
     }
