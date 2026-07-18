@@ -12,14 +12,32 @@ const DIAL     = { KE: "254", TZ: "255",  UG: "256"   };
 const FLAG     = { KE: "🇰🇪",  TZ: "🇹🇿",  UG: "🇺🇬"   };
 
 function statusColor(s) {
-  if (s === "success" || s === "approved") return "#00e676";
-  if (s === "declined"|| s === "failed")   return "#ff1744";
+  if (s === "success" || s === "approved")
+    return "#00e676";
+
+  if (
+    s === "failed" ||
+    s === "declined" ||
+    s === "cancelled"
+  )
+    return "#ff1744";
+
+  if (s === "timeout")
+    return "#ff9800";
+
   return "#ffc107";
 }
+
 function statusLabel(s) {
-  return { pending:"⏳ Pending", approved:"✅ Approved",
-           declined:"❌ Declined", success:"✅ Success",
-           failed:"❌ Failed" }[s] || s;
+  return {
+    pending: "⏳ Pending",
+    success: "✅ Success",
+    approved: "✅ Approved",
+    failed: "❌ Failed",
+    cancelled: "🚫 Cancelled",
+    timeout: "⌛ Timed Out",
+    declined: "❌ Declined"
+  }[s] || s;
 }
 
 // ── IntaSend Payment Button initialiser ───────────────────────
@@ -86,22 +104,47 @@ export default function WalletModal({ mode, onClose }) {
       const res = await fetch(
         `/api/payment-status?transactionId=${transactionId}`
       );
+const data = await res.json();
 
-      const data = await res.json();
+switch (data.status) {
 
-      if (data.status === "success") {
-        setStage("success");
-        setMessage(
-          `Deposit of ${rounded.toLocaleString()} ${currency} confirmed! Balance updated.`
-        );
-        clearInterval(interval);
-      }
+  case "success":
+    setStage("success");
+    setMessage(
+      `Deposit of ${rounded.toLocaleString()} ${currency} confirmed! Your wallet has been credited.`
+    );
+    clearInterval(interval);
+    return;
 
-      if (data.status === "failed") {
-        setStage("error");
-        setMessage("Payment failed or was cancelled.");
-        clearInterval(interval);
-      }
+  case "cancelled":
+    setStage("error");
+    setMessage(
+      data.message || "You cancelled the M-PESA request."
+    );
+    clearInterval(interval);
+    return;
+
+  case "timeout":
+    setStage("error");
+    setMessage(
+      data.message || "The M-PESA request timed out."
+    );
+    clearInterval(interval);
+    return;
+
+  case "failed":
+    setStage("error");
+    setMessage(
+      data.message || "Payment failed."
+    );
+    clearInterval(interval);
+    return;
+
+  default:
+    // Still pending
+    break;
+}
+      
     } catch (err) {
       console.error(err);
     }
