@@ -3,7 +3,7 @@ import {
   collection, getDocs, doc, getDoc, updateDoc, query, orderBy, limit, where,
   onSnapshot, serverTimestamp, deleteDoc, addDoc,
 } from "firebase/firestore";
-import { db } from "../frontend/src/lib/firebase";
+import { db } from "../../lib/firebase";
 
 export default function AdminPanelEnhanced({ adminUser }) {
   const [gameState, setGameState] = useState(null);
