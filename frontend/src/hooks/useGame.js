@@ -150,7 +150,7 @@ const firebaseGame = useFirebaseGame();
 
     if (!user) return;
 
-    return firebaseGame.subscribeToGame(
+    const unsub = firebaseGame.subscribeToGame(
 
         {
 
@@ -188,13 +188,23 @@ const firebaseGame = useFirebaseGame();
 
     );
 
-}, [user]);
+    // Start stuck phase detector
+    firebaseGame.startStuckPhaseDetector(gameState, hostController, firebaseGame);
+
+    return () => {
+      unsub();
+      firebaseGame.stopStuckPhaseDetector();
+    };
+
+}, [user, gameState]);
 
 useEffect(() => {
 
     return () => {
 
         hostController.stopHosting();
+
+        firebaseGame.stopStuckPhaseDetector();
 
     };
 

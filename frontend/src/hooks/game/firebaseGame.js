@@ -17,6 +17,8 @@ import {
 import { db } from "../../lib/firebase";
 import { generateMultiplier } from "./helpers";
 
+const PHASE_STUCK_TIMEOUT = 8000; // If a phase lasts longer than 8 seconds, it's stuck
+
 
 export function useFirebaseGame() {
   //----------------------------------------------------
@@ -24,6 +26,59 @@ export function useFirebaseGame() {
 //----------------------------------------------------
 
 const startedRoundRef = useRef(null);
+  const phaseStartTimeRef = useRef(null);
+  const stuckPhaseCheckRef = useRef(null);
+
+  //----------------------------------------------------
+  // Detect and recover from stuck phases
+  //----------------------------------------------------
+  function startStuckPhaseDetector(gameState, hostController, firebaseGame) {
+    if (stuckPhaseCheckRef.current) clearInterval(stuckPhaseCheckRef.current);
+
+    stuckPhaseCheckRef.current = setInterval(async () => {
+      if (!gameState || !phaseStartTimeRef.current) return;
+
+      const phaseDuration = Date.now() - phaseStartTimeRef.current;
+
+      // If crashed phase lasts too long, transition to waiting
+      if (
+        gameState.phase === "crashed" &&
+        phaseDuration > PHASE_STUCK_TIMEOUT
+      ) {
+        console.warn(
+          "[StuckPhaseDetector] Crashed phase stuck for",
+          phaseDuration,
+          "ms. Recovering..."
+        );
+        try {
+          await firebaseGame.finishRound(gameState.crashMultiplier || 1);
+        } catch (err) {
+          console.error("[StuckPhaseDetector] Recovery failed:", err);
+        }
+      }
+
+      // If flying phase lasts too long (crash multiplier reached), force crash
+      if (gameState.phase === "flying" && phaseDuration > PHASE_STUCK_TIMEOUT) {
+        console.warn(
+          "[StuckPhaseDetector] Flying phase stuck for",
+          phaseDuration,
+          "ms. Forcing crash..."
+        );
+        try {
+          await firebaseGame.finishRound(gameState.crashMultiplier || 1);
+        } catch (err) {
+          console.error("[StuckPhaseDetector] Force crash failed:", err);
+        }
+      }
+    }, 2000);
+  }
+
+  function stopStuckPhaseDetector() {
+    if (stuckPhaseCheckRef.current) {
+      clearInterval(stuckPhaseCheckRef.current);
+      stuckPhaseCheckRef.current = null;
+    }
+  }
   //----------------------------------------------------
   // Subscribe to current game
   //----------------------------------------------------
@@ -58,6 +113,15 @@ const startedRoundRef = useRef(null);
             }
 
             const game = snapshot.data();
+
+            // Track phase start time for stuck detection
+            if (game.phase !== phaseStartTimeRef.current) {
+              phaseStartTimeRef.current = game.phase;
+              // Reset the timer when phase changes
+              if (phaseStartTimeRef.current) {
+                phaseStartTimeRef.current = Date.now();
+              }
+            }
 
             //--------------------------------------------------
             // Update UI
@@ -279,5 +343,7 @@ const updateMultiplier = async (multiplier) => {
     startRound,
     updateMultiplier,
     finishRound,
-};
+    startStuckPhaseDetector,
+    stopStuckPhaseDetector,
+  };
 }
