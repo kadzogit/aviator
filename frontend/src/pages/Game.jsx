@@ -58,6 +58,8 @@ export default function Game() {
   const totalBetted   = liveBets.filter(b => b.result === "pending")
                                 .reduce((s, b) => s + (b.stake || 0), 0);
 
+  const isAdmin = profile?.role === "admin" || profile?.role === "superadmin";
+
   return (
     <div className="game-page dark-mode">
 
@@ -81,6 +83,28 @@ export default function Game() {
         </div>
 
         <div className="nav-right">
+          {/* Admin Dashboard Link */}
+          {isAdmin && (
+            <button 
+              className="btn-admin-nav"
+              onClick={() => navigate("/admin")}
+              style={{
+                background: "rgba(232,0,61,0.2)",
+                border: "1px solid #e8003d",
+                color: "#fff",
+                padding: "6px 12px",
+                borderRadius: "20px",
+                fontSize: "11px",
+                fontWeight: "700",
+                cursor: "pointer",
+                marginRight: "10px",
+                boxShadow: "0 0 10px rgba(232,0,61,0.3)"
+              }}
+            >
+              🛠 ADMIN DASHBOARD
+            </button>
+          )}
+
           {/* Sound */}
           <button
             className="btn-mute"
@@ -187,10 +211,7 @@ export default function Game() {
               liveBets={liveBets}
             />
 
-            {/* Multiplier display - lives inside canvas-wrap so it's
-                always contained within the visible graph rectangle,
-                on every screen size, instead of floating relative to
-                the page. */}
+            {/* Multiplier display */}
             <div
               className="multiplier-display"
               style={{ color: multColor, textShadow: multGlow }}
