@@ -147,56 +147,43 @@ const firebaseGame = useFirebaseGame();
 
   //replace the useEffect with ...
   useEffect(() => {
-
     if (!user) return;
 
-    const unsub = firebaseGame.subscribeToGame(
+    // Use a ref to keep track of the subscription to avoid multiple subscriptions
+    let unsub = null;
 
+    const startSubscription = () => {
+      unsub = firebaseGame.subscribeToGame(
         {
-
-            setGameState,
-
-            setGamePhase,
-
-            setMultiplier: animationEngine.setMultiplier,
-
-            setPastMultipliers,
-
-            setBets,
-
-            setQueuedBets,
-
-            queuedBetsRef: queuedRef,
-
-            betsRef
-
+          setGameState,
+          setGamePhase,
+          setMultiplier: animationEngine.setMultiplier,
+          setPastMultipliers,
+          setBets,
+          setQueuedBets,
+          queuedBetsRef: queuedRef,
+          betsRef
         },
-
         {
-
-    animationEngine,
-
-    roundEngine,
-
-    bettingEngine,
-
-    hostController,
-
-    firebaseGame
-
-}
-
-    );
-
-    // Start stuck phase detector
-    firebaseGame.startStuckPhaseDetector(gameState, hostController, firebaseGame);
-
-    return () => {
-      unsub();
-      firebaseGame.stopStuckPhaseDetector();
+          animationEngine,
+          roundEngine,
+          bettingEngine,
+          hostController,
+          firebaseGame
+        }
+      );
     };
 
-}, [user, gameState]);
+    startSubscription();
+
+    // Start stuck phase detector - we pass a getter or handle it inside
+    firebaseGame.startStuckPhaseDetector(null, hostController, firebaseGame);
+
+    return () => {
+      if (unsub) unsub();
+      firebaseGame.stopStuckPhaseDetector();
+    };
+  }, [user]); // Only re-subscribe if user changes
 
 useEffect(() => {
 

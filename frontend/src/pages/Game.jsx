@@ -5,7 +5,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import GameCanvas from "../components/GameCanvas";
 import BettingPanel from "../components/BettingPanel";
-import LeftPanel from "../components/LeftPanel";
+import LeftPanel from "../components/LeftPanelOptimized";
 import WalletModal from "../components/WalletModal";
 import { useNavigate } from "react-router-dom";
 

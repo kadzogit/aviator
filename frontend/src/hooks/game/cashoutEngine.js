@@ -1,4 +1,4 @@
-import { runTransaction, doc } from "firebase/firestore";
+import { runTransaction, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 
 export function useCashoutEngine(profile, user) {
@@ -66,23 +66,24 @@ export function useCashoutEngine(profile, user) {
                         snap.data()[field] || 0;
 
                     transaction.update(
-
                         userRef,
-
                         {
-
-                            [field]:
-
-                                balance +
-
-                                winnings
-
+                            [field]: balance + winnings
                         }
-
                     );
 
+                    // Also update the bet document to reflect the win
+                    const bId = bet.id || bet.betId;
+                    if (bId) {
+                      const betRef = doc(db, "bets", bId);
+                      transaction.update(betRef, {
+                        result: "win",
+                        winnings: winnings,
+                        cashoutMultiplier: multiplier,
+                        updatedAt: serverTimestamp()
+                      });
+                    }
                 }
-
             );
 
             showWin({

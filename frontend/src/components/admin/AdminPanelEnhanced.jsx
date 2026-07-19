@@ -17,14 +17,42 @@ export default function AdminPanelEnhanced({ adminUser }) {
   const [msg, setMsg] = useState("");
 
   // Live listener for critical game data
+  const [multiplier, setMultiplier] = useState(1);
+  
   useEffect(() => {
+    let frameId;
+    const animate = (startTimeMs, crashMultiplier) => {
+      const elapsed = Date.now() - startTimeMs;
+      const current = Math.exp(elapsed * 0.00004);
+      if (current >= crashMultiplier) {
+        setMultiplier(crashMultiplier);
+        return;
+      }
+      setMultiplier(current);
+      frameId = requestAnimationFrame(() => animate(startTimeMs, crashMultiplier));
+    };
+
     const unsubGame = onSnapshot(doc(db, "gameState", "current"), (snap) => {
-      if (snap.exists()) setGameState(snap.data());
+      if (snap.exists()) {
+        const data = snap.data();
+        setGameState(data);
+        if (data.phase === "flying" && data.startTimeMs) {
+          if (frameId) cancelAnimationFrame(frameId);
+          animate(data.startTimeMs, data.crashMultiplier);
+        } else {
+          if (frameId) cancelAnimationFrame(frameId);
+          setMultiplier(data.multiplier || 1);
+        }
+      }
     });
     const unsubBets = onSnapshot(query(collection(db, "bets"), where("result", "==", "pending")), (snap) => {
       setBets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => { unsubGame(); unsubBets(); };
+    return () => { 
+      unsubGame(); 
+      unsubBets(); 
+      if (frameId) cancelAnimationFrame(frameId);
+    };
   }, []);
 
   // Manual refresh functions
@@ -138,9 +166,9 @@ export default function AdminPanelEnhanced({ adminUser }) {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1>✈ AVIATOR CONTROL CENTER</h1>
+        <h1 style={styles.headerTitle}>✈ AVIATOR CONTROL</h1>
         <div style={styles.userInfo}>
-          <span>{adminUser?.fullName}</span>
+          <span style={styles.userName}>{adminUser?.fullName}</span>
           <span style={styles.role}>{adminUser?.role?.toUpperCase()}</span>
         </div>
       </div>
@@ -148,14 +176,14 @@ export default function AdminPanelEnhanced({ adminUser }) {
       {msg && <div style={styles.successMsg}>{msg}</div>}
 
       <div style={styles.tabs}>
-        {[["dashboard","📊 Dashboard"],["game","🎮 Game Control"],["users","👥 Users"],["transactions","💰 Transactions"],["logs","📋 Logs"]].map(([k,l]) => (
+        {[["dashboard","📊 Dash"],["game","🎮 Game"],["users","👥 Users"],["transactions","💰 Cash"],["logs","📋 Logs"]].map(([k,l]) => (
           <button key={k} onClick={() => setTab(k)} style={{...styles.tab, ...(tab === k ? styles.tabActive : {})}}>{l}</button>
         ))}
       </div>
 
       <div style={styles.content}>
-        {tab === "dashboard" && <DashboardTab gameState={gameState} users={users} transactions={transactions} bets={bets} rounds={rounds} />}
-        {tab === "game" && <GameControlTab gameState={gameState} onCrash={forceCrash} onReset={resetGameState} bets={bets} rounds={rounds} />}
+        {tab === "dashboard" && <DashboardTab gameState={gameState} multiplier={multiplier} users={users} transactions={transactions} bets={bets} rounds={rounds} />}
+        {tab === "game" && <GameControlTab gameState={gameState} multiplier={multiplier} onCrash={forceCrash} onReset={resetGameState} bets={bets} rounds={rounds} />}
         {tab === "users" && <UsersTab users={users} onRefresh={refreshUsers} onCredit={creditUser} loading={loading} />}
         {tab === "transactions" && <TransactionsTab transactions={transactions} onRefresh={refreshTransactions} loading={loading} />}
         {tab === "logs" && <LogsTab logs={adminLogs} onRefresh={refreshLogs} loading={loading} />}
@@ -164,14 +192,14 @@ export default function AdminPanelEnhanced({ adminUser }) {
   );
 }
 
-function DashboardTab({ gameState, users, transactions, bets, rounds }) {
+function DashboardTab({ gameState, multiplier, users, transactions, bets, rounds }) {
   const today = new Date(); today.setHours(0,0,0,0);
   const deps = transactions.filter(t => t.type === "deposit" && t.status === "approved" && new Date(t.timestamp?.toDate?.() || 0) >= today).reduce((s,t) => s + (t.amount || 0), 0);
   const wds = transactions.filter(t => t.type === "withdraw" && t.status === "approved" && new Date(t.timestamp?.toDate?.() || 0) >= today).reduce((s,t) => s + (t.amount || 0), 0);
 
   return (
     <div style={styles.dashboardGrid}>
-      <StatCard label="Live Multiplier" value={(gameState?.multiplier || 1).toFixed(2) + "x"} color="#ffd700" />
+      <StatCard label="Live Multiplier" value={(multiplier || 1).toFixed(2) + "x"} color="#ffd700" />
       <StatCard label="Active Players" value={bets.length} color="#00e5ff" />
       <StatCard label="Today Deposits" value={deps.toLocaleString() + " KES"} color="#00e676" />
       <StatCard label="Today Withdrawals" value={wds.toLocaleString() + " KES"} color="#ff1744" />
@@ -181,14 +209,14 @@ function DashboardTab({ gameState, users, transactions, bets, rounds }) {
   );
 }
 
-function GameControlTab({ gameState, onCrash, onReset, bets, rounds }) {
+function GameControlTab({ gameState, multiplier, onCrash, onReset, bets, rounds }) {
   const [customMult, setCustomMult] = useState("");
   return (
     <div style={styles.controlLayout}>
       <div style={styles.card}>
         <h3>Live View</h3>
         <div style={styles.livePreview}>
-          <div style={styles.liveMult}>{(gameState?.multiplier || 1).toFixed(2)}x</div>
+          <div style={{...styles.liveMult, color: gameState?.phase === "crashed" ? "#ff1744" : "#fff"}}>{(multiplier || 1).toFixed(2)}x</div>
           <div style={styles.livePhase}>{gameState?.phase?.toUpperCase()}</div>
         </div>
         <button onClick={onReset} style={styles.resetBtn}>⚠️ EMERGENCY RESET</button>
@@ -300,34 +328,37 @@ function StatCard({ label, value, color }) {
 
 const styles = {
   container: { background: "#0e0b1e", color: "#fff", minHeight: "100vh", fontFamily: "Inter, sans-serif" },
-  header: { background: "#12102a", padding: "20px 30px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(232,0,61,0.2)" },
-  role: { background: "rgba(255,215,0,0.1)", color: "#ffd700", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700 },
-  tabs: { display: "flex", background: "#1a1535", padding: "0 30px", borderBottom: "1px solid rgba(255,255,255,0.05)" },
-  tab: { background: "none", border: "none", color: "rgba(255,255,255,0.4)", padding: "15px 20px", cursor: "pointer", fontWeight: 600, borderBottom: "2px solid transparent" },
+  header: { background: "#12102a", padding: "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(232,0,61,0.2)" },
+  headerTitle: { fontSize: "1.2rem", margin: 0, whiteSpace: "nowrap" },
+  userInfo: { display: "flex", alignItems: "center", gap: 10 },
+  userName: { fontSize: "0.9rem", display: "none", "@media (min-width: 600px)": { display: "block" } },
+  role: { background: "rgba(255,215,0,0.1)", color: "#ffd700", padding: "4px 10px", borderRadius: 20, fontSize: 10, fontWeight: 700 },
+  tabs: { display: "flex", background: "#1a1535", padding: "0 10px", borderBottom: "1px solid rgba(255,255,255,0.05)", overflowX: "auto" },
+  tab: { background: "none", border: "none", color: "rgba(255,255,255,0.4)", padding: "12px 15px", cursor: "pointer", fontWeight: 600, borderBottom: "2px solid transparent", whiteSpace: "nowrap", fontSize: "0.85rem" },
   tabActive: { color: "#fff", borderBottomColor: "#e8003d" },
-  content: { padding: 30 },
-  dashboardGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 },
-  statCard: { background: "#1a1535", border: "1px solid", borderRadius: 12, padding: 20 },
-  controlLayout: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 },
-  card: { background: "#1a1535", borderRadius: 12, padding: 20, border: "1px solid rgba(255,255,255,0.05)" },
-  livePreview: { height: 150, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0e0b1e", borderRadius: 8, marginBottom: 15 },
-  liveMult: { fontSize: 48, fontWeight: 900, color: "#fff" },
-  livePhase: { fontSize: 12, color: "#00e5ff", fontWeight: 700 },
-  btnGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 15 },
-  crashBtn: { background: "rgba(232,0,61,0.2)", border: "1px solid #e8003d", color: "#fff", padding: "8px", borderRadius: 6, cursor: "pointer", fontWeight: 700 },
-  resetBtn: { width: "100%", background: "rgba(255,23,68,0.1)", border: "1px solid #ff1744", color: "#ff1744", padding: "12px", borderRadius: 8, cursor: "pointer", fontWeight: 700 },
-  inputGroup: { display: "flex", gap: 8 },
-  input: { flex: 1, background: "#0e0b1e", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "8px 12px", borderRadius: 6 },
-  roundHistory: { display: "flex", flexWrap: "wrap", gap: 6 },
-  roundItem: { background: "rgba(255,255,255,0.05)", padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700 },
-  dataPanel: { background: "#1a1535", borderRadius: 12, overflow: "hidden" },
-  panelHeader: { padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.05)" },
-  refreshBtn: { background: "rgba(0,229,255,0.1)", border: "1px solid #00e5ff", color: "#00e5ff", padding: "6px 12px", borderRadius: 6, cursor: "pointer" },
-  table: { width: "100%", padding: 20 },
-  tableHeader: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", fontWeight: 700, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 12, opacity: 0.5 },
-  tableRow: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.02)", fontSize: 13, alignItems: "center" },
-  actionGroup: { display: "flex", gap: 5 },
-  smallInput: { width: 60, background: "#0e0b1e", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "4px 8px", borderRadius: 4 },
-  smallBtn: { background: "#00e676", color: "#000", border: "none", padding: "4px 8px", borderRadius: 4, cursor: "pointer", fontWeight: 700 },
-  successMsg: { background: "#00e676", color: "#000", padding: "10px 30px", fontWeight: 700, fontSize: 14 },
+  content: { padding: "15px" },
+  dashboardGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 },
+  statCard: { background: "#1a1535", border: "1px solid", borderRadius: 10, padding: 15 },
+  controlLayout: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 15 },
+  card: { background: "#1a1535", borderRadius: 10, padding: 15, border: "1px solid rgba(255,255,255,0.05)" },
+  livePreview: { height: 120, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0e0b1e", borderRadius: 8, marginBottom: 10 },
+  liveMult: { fontSize: 36, fontWeight: 900, color: "#fff" },
+  livePhase: { fontSize: 10, color: "#00e5ff", fontWeight: 700 },
+  btnGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 10 },
+  crashBtn: { background: "rgba(232,0,61,0.2)", border: "1px solid #e8003d", color: "#fff", padding: "6px", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem" },
+  resetBtn: { width: "100%", background: "rgba(255,23,68,0.1)", border: "1px solid #ff1744", color: "#ff1744", padding: "10px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: "0.85rem" },
+  inputGroup: { display: "flex", gap: 6 },
+  input: { flex: 1, background: "#0e0b1e", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "6px 10px", borderRadius: 6, fontSize: "0.9rem" },
+  roundHistory: { display: "flex", flexWrap: "wrap", gap: 4 },
+  roundItem: { background: "rgba(255,255,255,0.05)", padding: "3px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700 },
+  dataPanel: { background: "#1a1535", borderRadius: 10, overflowX: "auto" },
+  panelHeader: { padding: 15, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.05)" },
+  refreshBtn: { background: "rgba(0,229,255,0.1)", border: "1px solid #00e5ff", color: "#00e5ff", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: "0.8rem" },
+  table: { width: "100%", minWidth: 500, padding: 15 },
+  tableHeader: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", fontWeight: 700, paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 11, opacity: 0.5 },
+  tableRow: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.02)", fontSize: 12, alignItems: "center" },
+  actionGroup: { display: "flex", gap: 4 },
+  smallInput: { width: 50, background: "#0e0b1e", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", padding: "4px 6px", borderRadius: 4, fontSize: "0.8rem" },
+  smallBtn: { background: "#00e676", color: "#000", border: "none", padding: "4px 8px", borderRadius: 4, cursor: "pointer", fontWeight: 700, fontSize: 10 },
+  successMsg: { background: "#00e676", color: "#000", padding: "8px 20px", fontWeight: 700, fontSize: 13 },
 };

@@ -14,7 +14,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 
-import { db } from "../../lib/firebase";
+import { db, auth } from "../../lib/firebase";
 import { generateMultiplier } from "./helpers";
 
 const PHASE_STUCK_TIMEOUT = 8000; // If a phase lasts longer than 8 seconds, it's stuck
@@ -32,45 +32,39 @@ const startedRoundRef = useRef(null);
   //----------------------------------------------------
   // Detect and recover from stuck phases
   //----------------------------------------------------
-  function startStuckPhaseDetector(gameState, hostController, firebaseGame) {
+  function startStuckPhaseDetector(gameStateIgnored, hostController, firebaseGame) {
     if (stuckPhaseCheckRef.current) clearInterval(stuckPhaseCheckRef.current);
 
     stuckPhaseCheckRef.current = setInterval(async () => {
-      if (!gameState || !phaseStartTimeRef.current) return;
+      // Get latest game state from a local ref or fetch it if needed
+      // For simplicity, we'll fetch the doc to ensure we have the absolute latest state before acting
+      if (!phaseStartTimeRef.current) return;
 
       const phaseDuration = Date.now() - phaseStartTimeRef.current;
+      if (phaseDuration < PHASE_STUCK_TIMEOUT) return;
 
-      // If crashed phase lasts too long, transition to waiting
-      if (
-        gameState.phase === "crashed" &&
-        phaseDuration > PHASE_STUCK_TIMEOUT
-      ) {
-        console.warn(
-          "[StuckPhaseDetector] Crashed phase stuck for",
-          phaseDuration,
-          "ms. Recovering..."
-        );
-        try {
-          await firebaseGame.finishRound(gameState.crashMultiplier || 1);
-        } catch (err) {
-          console.error("[StuckPhaseDetector] Recovery failed:", err);
-        }
-      }
+      try {
+        const snap = await getDoc(doc(db, "gameState", "current"));
+        if (!snap.exists()) return;
+        const game = snap.data();
 
-      // If flying phase lasts too long (crash multiplier reached), force crash
-      if (gameState.phase === "flying" && phaseDuration > PHASE_STUCK_TIMEOUT) {
-        console.warn(
-          "[StuckPhaseDetector] Flying phase stuck for",
-          phaseDuration,
-          "ms. Forcing crash..."
-        );
-        try {
-          await firebaseGame.finishRound(gameState.crashMultiplier || 1);
-        } catch (err) {
-          console.error("[StuckPhaseDetector] Force crash failed:", err);
+        // Check if this client is the host. Only the host (or a new host) should recover.
+        const isHost = game.hostUid === auth.currentUser?.uid;
+        if (!isHost) return;
+
+        if (game.phase === "crashed" && phaseDuration > PHASE_STUCK_TIMEOUT + 2000) {
+           console.warn("[StuckPhaseDetector] Recovering from stuck crashed phase");
+           await firebaseGame.finishRound(game.crashMultiplier || 1);
         }
+
+        if (game.phase === "flying" && phaseDuration > PHASE_STUCK_TIMEOUT + 5000) {
+           console.warn("[StuckPhaseDetector] Recovering from stuck flying phase");
+           await firebaseGame.finishRound(game.crashMultiplier || 1);
+        }
+      } catch (err) {
+        console.error("[StuckPhaseDetector] Error:", err);
       }
-    }, 2000);
+    }, 5000);
   }
 
   function stopStuckPhaseDetector() {
@@ -307,35 +301,45 @@ const updateMultiplier = async (multiplier) => {
   //----------------------------------------------------
 
   const finishRound = async (multiplier) => {
-
     // Show the crash
-    await updateDoc(
-        doc(db, "gameState", "current"),
-        {
-            phase: "crashed",
-            multiplier,
-            endedAt: serverTimestamp()
-        }
-    );
+    const gameRef = doc(db, "gameState", "current");
+    const snap = await getDoc(gameRef);
+    const roundId = snap.data()?.roundId;
+
+    await updateDoc(gameRef, {
+      phase: "crashed",
+      multiplier,
+      endedAt: serverTimestamp()
+    });
+
+    // Mark all pending bets for this round as lost if they didn't cash out
+    if (roundId) {
+      const q = query(collection(db, "bets"), where("roundId", "==", roundId), where("result", "==", "pending"));
+      const pendingBets = await getDocs(q);
+      const batch = [];
+      pendingBets.forEach(d => {
+        batch.push(updateDoc(doc(db, "bets", d.id), {
+          result: "lose",
+          updatedAt: serverTimestamp()
+        }));
+      });
+      await Promise.all(batch);
+    }
 
     // Keep the crash visible for 3 seconds
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Return to waiting
-    await updateDoc(
-        doc(db, "gameState", "current"),
-        {
-            phase: "waiting",
-            multiplier: 1,
-            crashMultiplier: generateMultiplier(),
-            roundId: crypto.randomUUID(),
-            startTime: serverTimestamp(),
-            startTimeMs: null,
-            endedAt: null
-        }
-    );
-
-};
+    await updateDoc(gameRef, {
+      phase: "waiting",
+      multiplier: 1,
+      crashMultiplier: generateMultiplier(),
+      roundId: crypto.randomUUID(),
+      startTime: serverTimestamp(),
+      startTimeMs: null,
+      endedAt: null
+    });
+  };
   return {
     subscribeToGame,
     loadHistory,
